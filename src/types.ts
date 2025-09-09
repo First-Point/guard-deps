@@ -40,6 +40,7 @@ export interface Advisory {
   safeVersion: string;
   advisoryId?: string;
   description?: string;
+  malwareVersion?: string; // The specific compromised version to detect
 }
 
 export interface AdvisoryDatabase {

@@ -111,7 +111,10 @@ async function loadTextAdvisories(filePath: string): Promise<AdvisoryDatabase> {
 }
 
 /**
- * Parse text advisories in format: "package > safe_version" or "package version -> safe_version"
+ * Parse text advisories in format: "package > malware_version"
+ * This means the malware_version is compromised and we should:
+ * 1. Try to upgrade to newer safe version if available
+ * 2. If no upgrade available, downgrade to safe version (y.z.[x-1])
  */
 function parseTextAdvisories(content: string): AdvisoryDatabase {
   const advisories: AdvisoryDatabase = {};
@@ -125,15 +128,21 @@ function parseTextAdvisories(content: string): AdvisoryDatabase {
       continue;
     }
     
-    // Parse new format: "package > safe_version" (versions higher than safe are bad)
+    // Parse format: "package > malware_version"
     const greaterThanMatch = trimmed.match(/^(.+?)\s+>\s+(.+?)$/);
     if (greaterThanMatch) {
-      const [, packageName, safeVersion] = greaterThanMatch;
+      const [, packageName, malwareVersion] = greaterThanMatch;
+      const cleanPackageName = packageName.trim();
+      const cleanMalwareVersion = malwareVersion.trim();
       
-      advisories[packageName.trim()] = {
-        package: packageName.trim(),
-        badVersions: [`>${safeVersion.trim()}`], // Use > to indicate "higher than"
-        safeVersion: safeVersion.trim(),
+      // Calculate safe version (malware version - 1 patch)
+      const safeVersion = calculateSafeVersion(cleanMalwareVersion);
+      
+      advisories[cleanPackageName] = {
+        package: cleanPackageName,
+        badVersions: [`>=${cleanMalwareVersion}`], // Malware version and higher are bad
+        safeVersion: safeVersion,
+        malwareVersion: cleanMalwareVersion, // Store the specific malware version
       };
       continue;
     }
@@ -161,6 +170,35 @@ function parseTextAdvisories(content: string): AdvisoryDatabase {
   }
   
   return advisories;
+}
+
+/**
+ * Calculate safe version by decrementing patch version from malware version
+ * Format: y.z.[x-1]
+ */
+function calculateSafeVersion(malwareVersion: string): string {
+  try {
+    const parts = malwareVersion.split('.');
+    if (parts.length >= 3) {
+      const major = parts[0];
+      const minor = parts[1];
+      const patch = parseInt(parts[2]);
+      
+      if (patch > 0) {
+        // Decrement patch version
+        return `${major}.${minor}.${patch - 1}`;
+      } else if (parts.length > 3) {
+        // Handle pre-release versions by removing them
+        return `${major}.${minor}.0`;
+      }
+    }
+    
+    // Fallback: return the malware version (user will need to investigate manually)
+    return malwareVersion;
+  } catch (error) {
+    console.warn(`Could not calculate safe version for ${malwareVersion}:`, error);
+    return malwareVersion;
+  }
 }
 
 /**
@@ -215,18 +253,29 @@ export function mergeAdvisories(...databases: AdvisoryDatabase[]): AdvisoryDatab
  */
 function getBuiltInAdvisories(): AdvisoryDatabase {
   // Parse the built-in advisory data (same as malicious-packages.txt)
-  const builtInData = `# Safe Package Versions - Downgrade if higher
-# Format: {package name} > {safe version}
-# Any version higher than the safe version should be flagged
+  const builtInData = `# Malware Package Detection
+# Format: {package name} > {malware version}
+# If malware version detected, try upgrade first, then downgrade to safe version (y.z.[x-1])
 
 # Color and styling packages (known compromised)
-chalk > 5.3.0
-strip-ansi > 7.1.0
-color-convert > 2.0.1
-color-name > 1.1.4
-is-core-module > 2.13.1
-error-ex > 1.3.2
-has-ansi > 5.0.1`;
+ansi-regex > 6.2.1
+ansi-styles > 6.2.2
+backslash > 0.2.1
+chalk > 5.6.1
+chalk-template > 1.1.1
+color > 5.0.1
+color-convert > 3.1.1
+color-name > 2.0.1
+color-string > 2.1.1
+error-ex > 1.3.3
+has-ansi > 6.0.1
+is-arrayish > 0.3.3
+simple-swizzle > 0.2.3
+slice-ansi > 7.1.1
+strip-ansi > 7.1.1
+supports-color > 10.2.1
+supports-hyperlinks > 4.1.1
+wrap-ansi > 9.0.1`;
 
   return parseTextAdvisories(builtInData);
 }

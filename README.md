@@ -1,15 +1,15 @@
 # 🛡️ Guard-Deps - NPM Dependency Security Scanner
 
-**Guard-Deps** is a lightweight, defensive security tool that scans Node.js projects for compromised NPM packages and automatically fixes them by downgrading to safe versions.
+**Guard-Deps** is a lightweight, defensive security tool that scans Node.js projects for compromised NPM packages and automatically fixes them using intelligent remediation (upgrade first, downgrade when needed).
 
-Following the recent NPM supply-chain attacks that compromised popular packages like `chalk`, `debug`, `simple-swizzle`, and others, Guard-Deps helps protect your projects by identifying packages with versions higher than known-safe baselines and providing automated remediation.
+Following the recent NPM supply-chain attacks that compromised popular packages like `chalk`, `debug`, `simple-swizzle`, and others, Guard-Deps helps protect your projects by detecting known malware versions and providing intelligent remediation (upgrade first, downgrade if needed).
 
 ## ✨ Features
 
 - 🔍 **Recursive Project Discovery**: Automatically finds all Node.js projects under a root directory
 - 📋 **Multi-Format Lockfile Support**: Parses `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, and fallback to `package.json`
-- 🎯 **Smart Security Analysis**: Identifies packages with versions higher than safe baselines
-- 🔧 **Automatic Fix**: Removes compromised packages, clears `node_modules`, downgrades to safe versions
+- 🎯 **Smart Security Analysis**: Detects known malware versions and intelligently remediates
+- 🔧 **Automatic Fix**: Intelligent remediation - upgrades first, downgrades only when needed
 - 📊 **Multiple Output Formats**: Console tables, JSON reports, and Markdown reports
 - ⚡ **Fast & Scalable**: Handles 1000+ projects within ~60 seconds
 - 🔒 **Safe Operations**: Read-only scanning with optional automated fixes
@@ -97,7 +97,7 @@ PROJECTS_ROOT=/path/to/your/projects
 IGNORE_DIRS=node_modules,dist,build,.git,.next,coverage
 
 # Advisory source - local file or remote URL
-ADVISORY_SOURCE=file:./malicious-packages.txt
+ADVISORY_SOURCE=file:./@malicious-packages.txt
 ```
 
 ## 🎯 Commands
@@ -195,32 +195,32 @@ guard-deps fix --help                       # Fix command help
 
 ## 🔒 Security Model
 
-Guard-Deps uses a **safe baseline** approach:
+Guard-Deps uses a **malware detection** approach:
 
-- **`malicious-packages.txt`** contains known-safe versions for packages
-- **Packages with versions HIGHER than safe versions** are flagged for downgrade
-- **Packages with versions LOWER than safe versions** are considered safe
+- **`@malicious-packages.txt`** contains known malware versions for packages
+- **When malware version detected**: Try to **upgrade** to newer safe version first
+- **If no upgrade available**: **Downgrade** to calculated safe version (y.z.[x-1])
+- **Smart strategy**: Keeps packages modern when possible, only downgrades when necessary
 
 ### Example Advisory Format
 
 ```text
-# Safe Package Versions - Downgrade if higher
-# Format: {package name} > {safe version}
+# Malware Package Detection  
+# Format: {package name} > {malware version}
+# If malware version detected, try upgrade first, then downgrade to safe version (y.z.[x-1])
 
-chalk > 5.3.0
-strip-ansi > 7.1.0
-color-convert > 2.0.1
-color-name > 1.1.4
-is-core-module > 2.13.1
-picocolors > 1.0.0
+chalk > 5.6.1
+ansi-styles > 6.2.2
+color-convert > 3.1.1
+is-core-module > 2.16.1
 ```
 
 ### Risk Levels
 
-- 🚨 **COMPROMISED**: Version higher than safe baseline - requires immediate downgrade
-- ⚠️ **AT_RISK**: Version range could resolve to compromised version
-- 📅 **OUTDATED**: Legacy classification (not used in current model)
-- ✅ **OK**: Version is safe or lower than baseline
+- 🚨 **COMPROMISED**: Malware version detected - will try upgrade first, then downgrade
+- ⚠️ **AT_RISK**: Version range could resolve to malware version
+- 📅 **OUTDATED**: Legacy classification (not used in current model)  
+- ✅ **OK**: Version is safe (not a known malware version)
 
 ## 📊 Output Examples
 
@@ -231,9 +231,9 @@ GUARD-DEPS SECURITY SCAN REPORT
 ================================================================================
 
 ┌─────────────────────┬─────────────┬─────────────────┬─────────────┬──────────────┐
-│ Project             │ Status      │ Package         │ Current     │ Safe         │
+│ Project             │ Status      │ Package         │ Current     │ Target       │
 ├─────────────────────┼─────────────┼─────────────────┼─────────────┼──────────────┤
-│ my-app              │ COMPROMISED │ picocolors      │ 1.1.1       │ 1.0.0        │
+│ my-app              │ COMPROMISED │ picocolors      │ 1.1.1       │ 1.2.0↑       │
 └─────────────────────┴─────────────┴─────────────────┴─────────────┴──────────────┘
 
 SUMMARY:
@@ -258,11 +258,11 @@ SUMMARY:
         {
           "package": "picocolors",
           "version": "1.1.1",
-          "safeVersion": "1.0.0",
+          "safeVersion": "1.1.0",
           "riskLevel": "compromised",
           "fix": [
-            "npm install picocolors@1.0.0",
-            "Pin picocolors to 1.0.0 in package.json"
+            "npm install picocolors@1.2.0",
+            "Upgrade to 1.2.0 (latest safe version)"
           ]
         }
       ]

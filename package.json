@@ -49,9 +49,5 @@
     "malicious-packages.txt",
     "README.md",
     "CLAUDE.md"
-  ],
-  "overrides": {
-    "is-core-module": "2.13.1",
-    "picocolors": "1.0.0"
-  }
+  ]
 }

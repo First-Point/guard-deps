@@ -7,6 +7,7 @@ import { promisify } from 'util';
 import { readFile, writeFile, rm, unlink } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join } from 'path';
+import * as semver from 'semver';
 import { ProjectResult, Finding, Config } from './types';
 
 const execAsync = promisify(exec);
@@ -206,12 +207,24 @@ async function fixProject(
       return result;
     }
 
-    // Step 4: Add overrides/resolutions for force downgrade FIRST
+    // Step 4: Determine target versions and add overrides FIRST
     let packageJsonModified = false;
+    const targetVersions: Map<string, string> = new Map();
+    
+    // Pre-calculate all target versions
+    for (const finding of compromisedFindings) {
+      const targetVersion = await determineBestFixVersion(
+        finding.package,
+        finding.version,
+        finding.safeVersion,
+        projectPath
+      );
+      targetVersions.set(finding.package, targetVersion);
+    }
     
     if (options.force) {
       if (!options.dryRun) {
-        await addPackageOverrides(packageJson, compromisedFindings, project.manager);
+        await addPackageOverridesWithVersions(packageJson, compromisedFindings, targetVersions, project.manager);
         packageJsonModified = true;
         console.log(`   🔒 Added overrides for ${compromisedFindings.length} packages`);
       } else {
@@ -224,32 +237,36 @@ async function fixProject(
       const { package: packageName, safeVersion } = finding;
       let packageUpdated = false;
       
+      // Use pre-calculated target version
+      const targetVersion = targetVersions.get(packageName) || safeVersion;
+      const strategy = targetVersion === safeVersion ? 'downgrade' : 'upgrade';
+      
       // Update in dependencies if they exist
       if (packageJson.dependencies && packageJson.dependencies[packageName]) {
         if (!options.dryRun) {
-          packageJson.dependencies[packageName] = safeVersion;
+          packageJson.dependencies[packageName] = targetVersion;
           packageJsonModified = true;
         }
         packageUpdated = true;
-        console.log(`   📦 ${options.dryRun ? '[DRY RUN] Would update' : 'Updated'} ${packageName}: ${finding.version} -> ${safeVersion}`);
+        console.log(`   📦 ${options.dryRun ? '[DRY RUN] Would ' + strategy : strategy === 'upgrade' ? 'Upgraded' : 'Downgraded'} ${packageName}: ${finding.version} -> ${targetVersion} (${strategy})`);
       }
       
       // Update in devDependencies if they exist
       if (packageJson.devDependencies && packageJson.devDependencies[packageName]) {
         if (!options.dryRun) {
-          packageJson.devDependencies[packageName] = safeVersion;
+          packageJson.devDependencies[packageName] = targetVersion;
           packageJsonModified = true;
         }
         packageUpdated = true;
-        console.log(`   📦 ${options.dryRun ? '[DRY RUN] Would update' : 'Updated'} ${packageName} (dev): ${finding.version} -> ${safeVersion}`);
+        console.log(`   📦 ${options.dryRun ? '[DRY RUN] Would ' + strategy : strategy === 'upgrade' ? 'Upgraded' : 'Downgraded'} ${packageName} (dev): ${finding.version} -> ${targetVersion} (${strategy})`);
       }
       
       // Count ALL fixed packages, including transitive dependencies fixed via overrides
-      if (!result.fixedPackages.includes(`${packageName}@${safeVersion}`)) {
-        result.fixedPackages.push(`${packageName}@${safeVersion}`);
+      if (!result.fixedPackages.includes(`${packageName}@${targetVersion}`)) {
+        result.fixedPackages.push(`${packageName}@${targetVersion}`);
         if (!packageUpdated) {
           // This was a transitive dependency fixed via override
-          console.log(`   🔒 ${options.dryRun ? '[DRY RUN] Would fix via override' : 'Fixed via override'} ${packageName}: ${finding.version} -> ${safeVersion}`);
+          console.log(`   🔒 ${options.dryRun ? '[DRY RUN] Would fix via override' : 'Fixed via override'} ${packageName}: ${finding.version} -> ${targetVersion} (${strategy})`);
         }
       }
     }
@@ -327,6 +344,65 @@ async function addPackageOverrides(
     // Nested override patterns to force resolution at all levels
     nestedOverrides[`*/${packageName}`] = safeVersion;
     nestedOverrides[`**/${packageName}`] = safeVersion;
+  }
+
+  switch (packageManager) {
+    case 'npm':
+      // Use npm overrides (npm 8.3+) with aggressive patterns
+      if (!packageJson.overrides) {
+        packageJson.overrides = {};
+      }
+      // Add direct overrides
+      Object.assign(packageJson.overrides, overrides);
+      // Add nested overrides for deep dependency trees
+      Object.assign(packageJson.overrides, nestedOverrides);
+      break;
+      
+    case 'yarn':
+      // Use yarn resolutions with glob patterns
+      if (!packageJson.resolutions) {
+        packageJson.resolutions = {};
+      }
+      Object.assign(packageJson.resolutions, overrides);
+      Object.assign(packageJson.resolutions, nestedOverrides);
+      break;
+      
+    case 'pnpm':
+      // Use pnpm overrides with nested patterns
+      if (!packageJson.pnpm) {
+        packageJson.pnpm = {};
+      }
+      if (!packageJson.pnpm.overrides) {
+        packageJson.pnpm.overrides = {};
+      }
+      Object.assign(packageJson.pnpm.overrides, overrides);
+      Object.assign(packageJson.pnpm.overrides, nestedOverrides);
+      break;
+  }
+}
+
+/**
+ * Add package overrides/resolutions using pre-calculated target versions
+ */
+async function addPackageOverridesWithVersions(
+  packageJson: any,
+  findings: Finding[],
+  targetVersions: Map<string, string>,
+  packageManager: string
+): Promise<void> {
+  const overrides: { [key: string]: string } = {};
+  const nestedOverrides: { [key: string]: string } = {};
+  
+  for (const finding of findings) {
+    const packageName = finding.package;
+    const targetVersion = targetVersions.get(packageName) || finding.safeVersion;
+    
+    // Direct override
+    overrides[packageName] = targetVersion;
+    
+    // Nested override patterns to force resolution at all levels
+    nestedOverrides[`*/${packageName}`] = targetVersion;
+    nestedOverrides[`**/${packageName}`] = targetVersion;
   }
 
   switch (packageManager) {
@@ -574,6 +650,43 @@ export async function restoreFromBackup(backupPath: string): Promise<void> {
   await writeFile(originalPath, content, 'utf-8');
   
   console.log(`✅ Restored from backup: ${backupPath}`);
+}
+
+/**
+ * Determine the best fix version: try upgrade first, then fallback to safe version
+ */
+async function determineBestFixVersion(
+  packageName: string,
+  currentVersion: string,
+  safeVersion: string,
+  projectPath: string
+): Promise<string> {
+  try {
+    // Try to get latest version information from npm
+    const { stdout } = await execAsync(`npm view ${packageName} version`, {
+      cwd: projectPath,
+      timeout: 30000, // 30 second timeout
+    });
+    
+    const latestVersion = stdout.trim();
+    
+    // Check if we can upgrade to a newer safe version
+    if (semver.gt(latestVersion, currentVersion) && semver.gt(latestVersion, safeVersion)) {
+      console.log(`   💡 Found newer version ${latestVersion} for ${packageName}, attempting upgrade`);
+      return latestVersion;
+    } else if (semver.gt(latestVersion, safeVersion)) {
+      console.log(`   💡 Found intermediate version ${latestVersion} for ${packageName}, using it`);
+      return latestVersion;
+    }
+    
+    // Fallback to safe version (downgrade)
+    return safeVersion;
+    
+  } catch (error) {
+    // If npm view fails, fallback to safe version
+    console.log(`   ⚠️  Could not check latest version for ${packageName}, using safe version`);
+    return safeVersion;
+  }
 }
 
 /**
