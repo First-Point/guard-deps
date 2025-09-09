@@ -221,20 +221,27 @@ function getBuiltInAdvisories(): AdvisoryDatabase {
 
 chalk > 5.3.0
 strip-ansi > 7.1.0
-color-convert > 2.0.1
-color-name > 1.1.4
+color-convert > 3.1.0
+color-name > 2.0.0
 is-core-module > 2.13.1
 error-ex > 1.3.2
-has-ansi > 5.0.1
+has-ansi > 6.0.0
 simple-swizzle > 0.2.2
-ansi-styles > 6.2.1
+ansi-styles > 6.2.0
 has-flag > 4.0.0
-supports-color > 9.4.0
-color-string > 1.9.1
+supports-color > 10.2.0
+color-string > 2.1.0
 is-arrayish > 0.3.2
 kleur > 4.1.5
 colors > 1.4.0
-picocolors > 1.0.0`;
+picocolors > 1.0.0
+wrap-ansi > 9.0.0
+backslash > 0.2.0
+chalk-template > 1.1.0
+supports-hyperlinks > 4.1.0
+debug > 4.4.1
+slice-ansi > 7.1.0
+ansi-regex > 6.2.0`;
 
   return parseTextAdvisories(builtInData);
 }
