@@ -33,7 +33,7 @@ export async function parseProjectDependencies(project: ProjectInfo): Promise<De
           const result = await parser.parse(project.lockfilePath);
           return result.dependencies;
         } catch (error) {
-          console.warn(`Warning: Failed to parse ${project.lockfilePath} with ${parser.constructor.name}:`, error);
+          console.warn(`Warning: Failed to parse ${project.lockfilePath} with ${parser.constructor.name}:`, error instanceof Error ? error.message : 'Unknown error');
         }
       }
     }
@@ -45,7 +45,7 @@ export async function parseProjectDependencies(project: ProjectInfo): Promise<De
     const result = await packageJsonParser.parse(project.packageJsonPath);
     return result.dependencies;
   } catch (error) {
-    console.warn(`Warning: Failed to parse ${project.packageJsonPath}:`, error);
+    console.warn(`Warning: Failed to parse ${project.packageJsonPath}:`, error instanceof Error ? error.message : 'Unknown error');
     return [];
   }
 }
@@ -117,7 +117,7 @@ export async function getAllProjectDependencies(project: ProjectInfo): Promise<{
       devDepNames = new Set(Object.keys(packageJson.devDependencies));
     }
   } catch (error) {
-    console.warn(`Warning: Could not read package.json at ${project.packageJsonPath}`);
+    console.warn(`Warning: Could not read or parse package.json at ${project.packageJsonPath}:`, error instanceof Error ? error.message : 'Unknown error');
   }
 
   const dependencies = allDeps.filter(dep => !devDepNames.has(dep.name));
