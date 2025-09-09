@@ -140,7 +140,7 @@ function parseTextAdvisories(content: string): AdvisoryDatabase {
       
       advisories[cleanPackageName] = {
         package: cleanPackageName,
-        badVersions: [`>=${cleanMalwareVersion}`], // Malware version and higher are bad
+        badVersions: [`=${cleanMalwareVersion}`], // Only the specific malware version is bad
         safeVersion: safeVersion,
         malwareVersion: cleanMalwareVersion, // Store the specific malware version
       };
