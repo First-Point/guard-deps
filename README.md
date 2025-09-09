@@ -34,7 +34,26 @@ guard-deps scan
 guard-deps fix --dry-run
 ```
 
-#### Option 2: Development/Local Usage
+#### Option 2: Development Link (Best for Active Development)
+```bash
+# Clone and build
+git clone <repository-url>
+cd guard-deps
+npm install
+npm run build
+
+# Link globally (one-time setup)
+npm link
+
+# Now use anywhere - updates automatically when you rebuild!
+guard-deps scan
+guard-deps fix --dry-run
+
+# After making code changes, just rebuild:
+npm run build  # Global command uses latest code automatically
+```
+
+#### Option 3: Local Usage (No Global Install)
 ```bash
 # Clone and build
 git clone <repository-url>
@@ -280,10 +299,15 @@ SUMMARY:
 
 ### 1. Install Globally
 ```bash
-# One-time setup
+# One-time setup (production usage)
 git clone <repository-url>
 cd guard-deps
 npm install && npm run build && npm install -g .
+
+# OR for development (recommended for contributors)
+git clone <repository-url>
+cd guard-deps
+npm install && npm run build && npm link
 ```
 
 ### 2. Initial Scan
@@ -339,6 +363,37 @@ src/
 - **Fast**: Parallel directory traversal and lockfile parsing
 - **Scalable**: Handles 1000+ projects within ~60 seconds
 - **Defensive**: Comprehensive error handling and input validation
+
+## 🛠️ Development
+
+### Development Workflow
+```bash
+# Initial setup
+git clone <repository-url>
+cd guard-deps
+npm install
+
+# Development workflow
+npm run build    # Build TypeScript
+npm link         # Link globally (one-time)
+
+# After code changes
+npm run build    # Rebuild - global command updates automatically!
+
+# Test your changes
+guard-deps scan --dry-run
+guard-deps fix --dry-run
+
+# Code quality
+npm run typecheck  # TypeScript validation
+npm test          # Run tests (when available)
+```
+
+### Key Points
+- ✅ **Use `npm link`** for development instead of `npm install -g`
+- ✅ **Only rebuild** after code changes - no need to reinstall
+- ✅ **Global command updates automatically** when you rebuild
+- ✅ **Clean up** with `npm unlink` when done
 
 ## 📈 Roadmap
 

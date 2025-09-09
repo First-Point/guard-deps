@@ -4,10 +4,10 @@
 
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { readFile, writeFile, rmdir, unlink } from 'fs/promises';
+import { readFile, writeFile, rm, unlink } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join } from 'path';
-import { ProjectInfo, ProjectResult, Finding, Config } from './types';
+import { ProjectResult, Finding, Config } from './types';
 
 const execAsync = promisify(exec);
 
@@ -41,8 +41,7 @@ export interface FixReport {
  * Consolidate findings from node_modules sub-projects into their root projects
  */
 function consolidateFindingsToRootProjects(
-  scanResults: ProjectResult[],
-  config: Config
+  scanResults: ProjectResult[]
 ): Map<string, Finding[]> {
   const rootProjectFindings = new Map<string, Finding[]>();
 
@@ -103,7 +102,7 @@ export async function fixCompromisedPackages(
   console.log(`   Create backup: ${options.backup ? 'YES' : 'NO'}\n`);
 
   // Group all findings by root project (ignore node_modules sub-projects)
-  const rootProjectFindings = consolidateFindingsToRootProjects(scanResults, config);
+  const rootProjectFindings = consolidateFindingsToRootProjects(scanResults);
 
   for (const [rootPath, findings] of rootProjectFindings) {
     if (findings.length === 0) {
@@ -171,7 +170,6 @@ async function fixProject(
 ): Promise<FixResult> {
   const projectPath = join(config.projectsRoot, project.path);
   const packageJsonPath = join(projectPath, 'package.json');
-  const nodeModulesPath = join(projectPath, 'node_modules');
   
   const result: FixResult = {
     success: false,
@@ -221,9 +219,10 @@ async function fixProject(
       }
     }
 
-    // Step 5: Update direct dependencies in package.json (optional)
+    // Step 5: Update direct dependencies in package.json AND count all fixed packages
     for (const finding of compromisedFindings) {
       const { package: packageName, safeVersion } = finding;
+      let packageUpdated = false;
       
       // Update in dependencies if they exist
       if (packageJson.dependencies && packageJson.dependencies[packageName]) {
@@ -231,7 +230,7 @@ async function fixProject(
           packageJson.dependencies[packageName] = safeVersion;
           packageJsonModified = true;
         }
-        result.fixedPackages.push(`${packageName}@${safeVersion}`);
+        packageUpdated = true;
         console.log(`   📦 ${options.dryRun ? '[DRY RUN] Would update' : 'Updated'} ${packageName}: ${finding.version} -> ${safeVersion}`);
       }
       
@@ -241,10 +240,17 @@ async function fixProject(
           packageJson.devDependencies[packageName] = safeVersion;
           packageJsonModified = true;
         }
-        if (!result.fixedPackages.includes(`${packageName}@${safeVersion}`)) {
-          result.fixedPackages.push(`${packageName}@${safeVersion}`);
-        }
+        packageUpdated = true;
         console.log(`   📦 ${options.dryRun ? '[DRY RUN] Would update' : 'Updated'} ${packageName} (dev): ${finding.version} -> ${safeVersion}`);
+      }
+      
+      // Count ALL fixed packages, including transitive dependencies fixed via overrides
+      if (!result.fixedPackages.includes(`${packageName}@${safeVersion}`)) {
+        result.fixedPackages.push(`${packageName}@${safeVersion}`);
+        if (!packageUpdated) {
+          // This was a transitive dependency fixed via override
+          console.log(`   🔒 ${options.dryRun ? '[DRY RUN] Would fix via override' : 'Fixed via override'} ${packageName}: ${finding.version} -> ${safeVersion}`);
+        }
       }
     }
 
@@ -261,16 +267,23 @@ async function fixProject(
       console.log(`   🗑️  [DRY RUN] Would remove lockfiles and node_modules`);
     }
 
-    // Step 8: Install packages with clean slate
+    // Step 8: Install packages with clean slate (with retries for robustness)
     if (!options.dryRun) {
       console.log(`   📥 Installing packages with clean slate...`);
-      await installPackages(projectPath, project.manager, options.force);
+      await installPackagesWithRetry(projectPath, project.manager, options.force);
       console.log(`   ✅ Package installation completed`);
       
       // Step 9: Run npm audit fix to resolve any remaining vulnerabilities
       console.log(`   🔧 Running npm audit fix...`);
       await runAuditFix(projectPath, project.manager);
       console.log(`   ✅ Audit fix completed`);
+      
+      // Step 10: Force reinstall if we're still seeing issues (for complex dependency trees)
+      if (options.force) {
+        console.log(`   🔄 Performing additional install to ensure overrides take effect...`);
+        await installPackages(projectPath, project.manager, true);
+        console.log(`   ✅ Additional install completed`);
+      }
     } else {
       console.log(`   📥 [DRY RUN] Would install packages`);
       console.log(`   🔧 [DRY RUN] Would run npm audit fix`);
@@ -351,10 +364,7 @@ async function cleanProjectDependencies(
   try {
     // Remove lockfile
     if (existsSync(lockfilePath)) {
-      await rmdir(lockfilePath).catch(() => {
-        // Try unlinking if rmdir fails (for files)
-        return unlink(lockfilePath);
-      });
+      await unlink(lockfilePath);
       console.log(`   🗑️  Removed ${lockfiles[packageManager as keyof typeof lockfiles] || lockfiles.npm}`);
     }
     
@@ -370,7 +380,7 @@ async function cleanProjectDependencies(
     // Remove node_modules
     if (!skipNodeModules && existsSync(nodeModulesPath)) {
       console.log(`   🗑️  Removing node_modules...`);
-      await rmdir(nodeModulesPath, { recursive: true });
+      await rm(nodeModulesPath, { recursive: true, force: true });
       console.log(`   🗑️  Removed node_modules`);
     }
   } catch (error) {
@@ -403,6 +413,54 @@ async function installPackages(
     const execError = error as any;
     throw new Error(`Install failed: ${execError.message}`);
   }
+}
+
+/**
+ * Install packages with retry logic for complex dependency trees
+ */
+async function installPackagesWithRetry(
+  projectPath: string,
+  packageManager: string,
+  force: boolean,
+  maxRetries: number = 2
+): Promise<void> {
+  let lastError: Error | undefined;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      if (attempt > 1) {
+        console.log(`   🔄 Install attempt ${attempt}/${maxRetries}...`);
+      }
+      
+      await installPackages(projectPath, packageManager, force);
+      return; // Success!
+      
+    } catch (error) {
+      lastError = error as Error;
+      
+      if (attempt < maxRetries) {
+        console.log(`   ⚠️  Install attempt ${attempt} failed, retrying...`);
+        
+        // For npm, try clearing cache between retries
+        if (packageManager === 'npm') {
+          try {
+            await execAsync('npm cache clean --force', { 
+              cwd: projectPath,
+              timeout: 60000 
+            });
+          } catch {
+            // Ignore cache clean errors
+          }
+        }
+        
+        // Brief delay before retry
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+    }
+  }
+  
+  // All retries failed
+  throw lastError || new Error('Installation failed after retries');
 }
 
 /**
