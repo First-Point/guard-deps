@@ -38,6 +38,7 @@ program
   .option('--format <type>', 'Output format: table, json, md', 'table')
   .option('--strict', 'Only fail on confirmed compromised versions')
   .option('--fail-on <level>', 'Fail on: compromised, at_risk, outdated', 'compromised')
+  .option('--audit-all', 'Run npm audit on all projects (not just first 3)')
   .action(async (options: CliOptions) => {
     try {
       await runScan(options);
@@ -168,7 +169,7 @@ async function runScan(options: CliOptions): Promise<void> {
   
   // Run npm audit on projects to get additional vulnerability info
   console.log('🔍 Running npm audit for additional vulnerability detection...');
-  await runAuditOnProjects(projects);
+  await runAuditOnProjects(projects, options.auditAll);
   
   const endTime = Date.now();
   const duration = ((endTime - startTime) / 1000).toFixed(2);
@@ -294,13 +295,16 @@ async function runFix(options: CliOptions & {
 /**
  * Run npm audit on discovered projects for additional vulnerability info
  */
-async function runAuditOnProjects(projects: ProjectInfo[]): Promise<void> {
+async function runAuditOnProjects(projects: ProjectInfo[], auditAll?: boolean): Promise<void> {
   // Only run audit on actual project roots (not inside node_modules)
   const rootProjects = projects.filter(p => !p.path.includes('node_modules'));
   
   console.log(`   Running audit on ${rootProjects.length} root projects...`);
   
-  for (const project of rootProjects.slice(0, 3)) { // Limit to first 3 projects to avoid long delays
+  // Limit to first 3 projects by default to avoid long delays, unless --audit-all is specified
+  const projectsToAudit = auditAll ? rootProjects : rootProjects.slice(0, 3);
+  
+  for (const project of projectsToAudit) {
     const projectPath = join(process.cwd(), project.path);
     const auditCommand = project.manager.name === 'yarn' ? 'yarn audit' : 
                         project.manager.name === 'pnpm' ? 'pnpm audit' : 'npm audit';
@@ -328,8 +332,8 @@ async function runAuditOnProjects(projects: ProjectInfo[]): Promise<void> {
     }
   }
   
-  if (rootProjects.length > 3) {
-    console.log(`   💡 Audited first 3 projects. Use 'npm audit' manually for others if needed.`);
+  if (!auditAll && rootProjects.length > 3) {
+    console.log(`   💡 Audited first 3 projects. Use --audit-all flag to audit all ${rootProjects.length} projects.`);
   }
 }
 

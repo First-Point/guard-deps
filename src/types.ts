@@ -89,6 +89,7 @@ export interface CliOptions {
   format?: 'table' | 'json' | 'md';
   strict?: boolean;
   failOn?: 'compromised' | 'at_risk' | 'outdated';
+  auditAll?: boolean;
 }
 
 export interface ParsedLockfile {

@@ -129,6 +129,9 @@ guard-deps scan --fail-on compromised      # Exit code 10 on compromised (defaul
 guard-deps scan --fail-on at_risk          # Exit code 11 on at-risk packages  
 guard-deps scan --fail-on outdated         # Exit code 11 on outdated packages
 
+# Additional vulnerability scanning
+guard-deps scan --audit-all                # Run npm audit on all projects (not just first 3)
+
 # Combined example
 guard-deps scan --cwd ~/Projects --out security-report.json --md security-report.md --fail-on at_risk
 ```
