@@ -2,13 +2,9 @@
  * Environment configuration management for guard-deps
  */
 
-import { config } from 'dotenv';
 import { existsSync } from 'fs';
 import { resolve, join } from 'path';
 import { Config, CliOptions } from './types';
-
-// Load .env file if it exists
-config();
 
 /**
  * Get the bundled advisory file path

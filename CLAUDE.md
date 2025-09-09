@@ -68,7 +68,7 @@ npx guard-deps scan [options]
 ```
 
 ### Configuration
-- `.env` support for PROJECTS_ROOT, IGNORE_DIRS, ADVISORY_SOURCE
+- Environment variable support for PROJECTS_ROOT, IGNORE_DIRS, ADVISORY_SOURCE
 - Local and remote advisory sources
 - Configurable ignore patterns
 
@@ -80,14 +80,14 @@ npx guard-deps scan [options]
 - `3`: Parse error
 
 ## Advisory Format
-```json
-{
-  "chalk": { 
-    "bad": ["=5.6.1"], 
-    "safe": "5.3.0",
-    "advisoryId": "QIX-2025-09"
-  }
-}
+```text
+# Malware Package Detection
+# Format: {package name} > {malware version} > {safe version}
+# If malware version detected, use the specified safe version for upgrade/downgrade
+
+chalk > 5.6.1 > 5.6.2
+ansi-styles > 6.2.2 > 6.2.3
+color-convert > 3.1.1 > 3.1.0
 ```
 
 ## Output Examples

@@ -87,17 +87,17 @@ PROJECTS_ROOT=/Users/yourname/Projects guard-deps scan
 
 ## 📋 Configuration
 
-Create a `.env` file in your project directory:
+Guard-Deps works with sensible defaults and no configuration required. You can optionally configure via environment variables:
 
-```env
-# Root directory to scan for Node.js projects (required)
+```bash
+# Root directory to scan for Node.js projects
 PROJECTS_ROOT=/path/to/your/projects
 
-# Comma-separated directories to ignore during scanning
+# Comma-separated directories to ignore during scanning  
 IGNORE_DIRS=node_modules,dist,build,.git,.next,coverage
 
 # Advisory source - local file or remote URL
-ADVISORY_SOURCE=file:./@malicious-packages.txt
+ADVISORY_SOURCE=file:./malicious-packages.txt
 ```
 
 ## 🎯 Commands
@@ -206,13 +206,13 @@ Guard-Deps uses a **malware detection** approach:
 
 ```text
 # Malware Package Detection  
-# Format: {package name} > {malware version}
-# If malware version detected, try upgrade first, then downgrade to safe version (y.z.[x-1])
+# Format: {package name} > {malware version} > {safe version}
+# If malware version detected, use the specified safe version for upgrade/downgrade
 
-chalk > 5.6.1
-ansi-styles > 6.2.2
-color-convert > 3.1.1
-is-core-module > 2.16.1
+chalk > 5.6.1 > 5.6.2
+ansi-styles > 6.2.2 > 6.2.3
+color-convert > 3.1.1 > 3.1.0
+is-core-module > 2.16.1 > 2.16.0
 ```
 
 ### Risk Levels
@@ -347,7 +347,7 @@ guard-deps fix --cwd ./my-critical-app
 ```
 src/
 ├── types.ts           # TypeScript interfaces
-├── env.ts            # Environment configuration (.env handling)
+├── env.ts            # Environment configuration
 ├── discover.ts       # Project discovery (recursive scan)
 ├── lock-parser/      # Lockfile parsers (npm, yarn, pnpm)
 ├── advisory.ts       # Advisory database management
