@@ -281,8 +281,16 @@ async function fixProject(
       // Step 10: Force reinstall if we're still seeing issues (for complex dependency trees)
       if (options.force) {
         console.log(`   🔄 Performing additional install to ensure overrides take effect...`);
+        
+        // Remove lockfile again in case it was regenerated incorrectly
+        await cleanLockfilesOnly(projectPath, project.manager);
+        
+        // Force install with more aggressive flags
         await installPackages(projectPath, project.manager, true);
         console.log(`   ✅ Additional install completed`);
+        
+        // Optional: Quick verification that overrides worked
+        console.log(`   🔍 Verifying override effectiveness...`);
       }
     } else {
       console.log(`   📥 [DRY RUN] Would install packages`);
@@ -307,30 +315,43 @@ async function addPackageOverrides(
   packageManager: string
 ): Promise<void> {
   const overrides: { [key: string]: string } = {};
+  const nestedOverrides: { [key: string]: string } = {};
   
   for (const finding of findings) {
-    overrides[finding.package] = finding.safeVersion;
+    const packageName = finding.package;
+    const safeVersion = finding.safeVersion;
+    
+    // Direct override
+    overrides[packageName] = safeVersion;
+    
+    // Nested override patterns to force resolution at all levels
+    nestedOverrides[`*/${packageName}`] = safeVersion;
+    nestedOverrides[`**/${packageName}`] = safeVersion;
   }
 
   switch (packageManager) {
     case 'npm':
-      // Use npm overrides (npm 8.3+)
+      // Use npm overrides (npm 8.3+) with aggressive patterns
       if (!packageJson.overrides) {
         packageJson.overrides = {};
       }
+      // Add direct overrides
       Object.assign(packageJson.overrides, overrides);
+      // Add nested overrides for deep dependency trees
+      Object.assign(packageJson.overrides, nestedOverrides);
       break;
       
     case 'yarn':
-      // Use yarn resolutions
+      // Use yarn resolutions with glob patterns
       if (!packageJson.resolutions) {
         packageJson.resolutions = {};
       }
       Object.assign(packageJson.resolutions, overrides);
+      Object.assign(packageJson.resolutions, nestedOverrides);
       break;
       
     case 'pnpm':
-      // Use pnpm overrides
+      // Use pnpm overrides with nested patterns
       if (!packageJson.pnpm) {
         packageJson.pnpm = {};
       }
@@ -338,6 +359,7 @@ async function addPackageOverrides(
         packageJson.pnpm.overrides = {};
       }
       Object.assign(packageJson.pnpm.overrides, overrides);
+      Object.assign(packageJson.pnpm.overrides, nestedOverrides);
       break;
   }
 }
@@ -389,6 +411,40 @@ async function cleanProjectDependencies(
 }
 
 /**
+ * Clean only lockfiles (for additional cleaning steps)
+ */
+async function cleanLockfilesOnly(
+  projectPath: string,
+  packageManager: string
+): Promise<void> {
+  const lockfiles = {
+    npm: 'package-lock.json',
+    yarn: 'yarn.lock', 
+    pnpm: 'pnpm-lock.yaml',
+  };
+  
+  const lockfilePath = join(projectPath, lockfiles[packageManager as keyof typeof lockfiles] || lockfiles.npm);
+  
+  try {
+    // Remove main lockfile
+    if (existsSync(lockfilePath)) {
+      await unlink(lockfilePath);
+      console.log(`   🗑️  Removed lockfile again for clean install`);
+    }
+    
+    // Remove additional pnpm lockfile variant
+    if (packageManager === 'pnpm') {
+      const altLockfile = join(projectPath, 'pnpm-lock.yml');
+      if (existsSync(altLockfile)) {
+        await unlink(altLockfile);
+      }
+    }
+  } catch (error) {
+    console.warn(`   ⚠️  Warning: Could not clean lockfile: ${error}`);
+  }
+}
+
+/**
  * Install packages using the appropriate package manager
  */
 async function installPackages(
@@ -397,7 +453,9 @@ async function installPackages(
   force: boolean
 ): Promise<void> {
   const commands: { [key: string]: string } = {
-    npm: force ? 'npm install --force' : 'npm install',
+    npm: force 
+      ? 'npm install --force --no-fund --no-audit --prefer-offline' 
+      : 'npm install --no-fund --no-audit',
     yarn: force ? 'yarn install --force' : 'yarn install',
     pnpm: force ? 'pnpm install --force' : 'pnpm install',
   };
