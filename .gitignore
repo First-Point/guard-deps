@@ -1,0 +1,6 @@
+dist/
+node_modules/
+test-report-*.json
+test-report.md
+test-report.json
+.env

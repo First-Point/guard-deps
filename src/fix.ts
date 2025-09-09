@@ -1,0 +1,504 @@
+/**
+ * Automatic package fixing functionality
+ */
+
+import { exec } from 'child_process';
+import { promisify } from 'util';
+import { readFile, writeFile, rmdir, unlink } from 'fs/promises';
+import { existsSync } from 'fs';
+import { join } from 'path';
+import { ProjectInfo, ProjectResult, Finding, Config } from './types';
+
+const execAsync = promisify(exec);
+
+export interface FixOptions {
+  dryRun: boolean;
+  force: boolean;
+  skipNodeModules: boolean;
+  backup: boolean;
+}
+
+export interface FixResult {
+  success: boolean;
+  project: string;
+  fixedPackages: string[];
+  errors: string[];
+  backupPath?: string;
+}
+
+export interface FixReport {
+  totalProjects: number;
+  fixedProjects: number;
+  failedProjects: number;
+  results: FixResult[];
+  summary: {
+    totalPackagesFixed: number;
+    errors: string[];
+  };
+}
+
+/**
+ * Consolidate findings from node_modules sub-projects into their root projects
+ */
+function consolidateFindingsToRootProjects(
+  scanResults: ProjectResult[],
+  config: Config
+): Map<string, Finding[]> {
+  const rootProjectFindings = new Map<string, Finding[]>();
+
+  for (const project of scanResults) {
+    // Determine if this is a node_modules sub-project or a root project
+    const isNodeModulesProject = project.path.includes('node_modules');
+    
+    let rootPath: string;
+    
+    if (isNodeModulesProject) {
+      // Extract root project path (everything before first node_modules)
+      const nodeModulesIndex = project.path.indexOf('node_modules');
+      rootPath = project.path.substring(0, nodeModulesIndex).replace(/\/$/, '');
+      
+      console.log(`   📦 Found compromised packages in ${project.path} - will fix in root project${rootPath ? ` (${rootPath})` : ''}`);
+    } else {
+      // This is already a root project
+      rootPath = project.path;
+    }
+
+    // Add findings to the root project
+    const existingFindings = rootProjectFindings.get(rootPath) || [];
+    
+    // Merge findings, avoiding duplicates
+    const newFindings = project.findings.filter(finding => 
+      !existingFindings.some(existing => 
+        existing.package === finding.package && existing.version === finding.version
+      )
+    );
+    
+    rootProjectFindings.set(rootPath, [...existingFindings, ...newFindings]);
+  }
+
+  return rootProjectFindings;
+}
+
+/**
+ * Fix all compromised packages in scan results
+ */
+export async function fixCompromisedPackages(
+  scanResults: ProjectResult[],
+  config: Config,
+  options: FixOptions = {
+    dryRun: false,
+    force: true,
+    skipNodeModules: false,
+    backup: true
+  }
+): Promise<FixReport> {
+  const results: FixResult[] = [];
+  let totalPackagesFixed = 0;
+  const globalErrors: string[] = [];
+
+  console.log(`🔧 Starting automatic fix process...`);
+  console.log(`   Mode: ${options.dryRun ? 'DRY RUN' : 'LIVE FIX'}`);
+  console.log(`   Force: ${options.force ? 'YES' : 'NO'}`);
+  console.log(`   Clear node_modules: ${!options.skipNodeModules ? 'YES' : 'NO'}`);
+  console.log(`   Create backup: ${options.backup ? 'YES' : 'NO'}\n`);
+
+  // Group all findings by root project (ignore node_modules sub-projects)
+  const rootProjectFindings = consolidateFindingsToRootProjects(scanResults, config);
+
+  for (const [rootPath, findings] of rootProjectFindings) {
+    if (findings.length === 0) {
+      console.log(`✅ ${rootPath || 'root'}: No issues to fix`);
+      continue;
+    }
+
+    console.log(`🔧 Fixing project: ${rootPath || 'root'} (${findings.length} compromised packages found)`);
+    
+    // Create a synthetic ProjectResult for the root project
+    const rootProject: ProjectResult = {
+      path: rootPath,
+      manager: 'npm', // Will be detected properly in fixProject
+      status: 'compromised',
+      findings: findings
+    };
+    
+    try {
+      const result = await fixProject(rootProject, config, options);
+      results.push(result);
+      
+      if (result.success) {
+        totalPackagesFixed += result.fixedPackages.length;
+        console.log(`✅ ${result.project}: Fixed ${result.fixedPackages.length} packages`);
+      } else {
+        console.log(`❌ ${result.project}: Fix failed`);
+        result.errors.forEach(error => console.log(`   Error: ${error}`));
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      globalErrors.push(`Project ${rootPath}: ${errorMsg}`);
+      console.log(`❌ ${rootPath || 'root'}: ${errorMsg}`);
+      
+      results.push({
+        success: false,
+        project: rootPath || 'root',
+        fixedPackages: [],
+        errors: [errorMsg],
+      });
+    }
+  }
+
+  const fixedProjects = results.filter(r => r.success).length;
+  const failedProjects = results.filter(r => !r.success).length;
+
+  return {
+    totalProjects: scanResults.length,
+    fixedProjects,
+    failedProjects,
+    results,
+    summary: {
+      totalPackagesFixed,
+      errors: globalErrors,
+    },
+  };
+}
+
+/**
+ * Fix a single project
+ */
+async function fixProject(
+  project: ProjectResult,
+  config: Config,
+  options: FixOptions
+): Promise<FixResult> {
+  const projectPath = join(config.projectsRoot, project.path);
+  const packageJsonPath = join(projectPath, 'package.json');
+  const nodeModulesPath = join(projectPath, 'node_modules');
+  
+  const result: FixResult = {
+    success: false,
+    project: project.path || 'root',
+    fixedPackages: [],
+    errors: [],
+  };
+
+  // Check if package.json exists
+  if (!existsSync(packageJsonPath)) {
+    result.errors.push('package.json not found');
+    return result;
+  }
+
+  try {
+    // Step 1: Create backup if requested
+    if (options.backup && !options.dryRun) {
+      const backupPath = await createBackup(packageJsonPath);
+      result.backupPath = backupPath;
+      console.log(`   📋 Backup created: ${backupPath}`);
+    }
+
+    // Step 2: Read current package.json
+    const packageJsonContent = await readFile(packageJsonPath, 'utf-8');
+    const packageJson = JSON.parse(packageJsonContent);
+
+    // Step 3: Prepare package fixes
+    const compromisedFindings = project.findings.filter(f => 
+      f.riskLevel === 'compromised' || f.riskLevel === 'at_risk'
+    );
+
+    if (compromisedFindings.length === 0) {
+      result.success = true;
+      return result;
+    }
+
+    // Step 4: Add overrides/resolutions for force downgrade FIRST
+    let packageJsonModified = false;
+    
+    if (options.force) {
+      if (!options.dryRun) {
+        await addPackageOverrides(packageJson, compromisedFindings, project.manager);
+        packageJsonModified = true;
+        console.log(`   🔒 Added overrides for ${compromisedFindings.length} packages`);
+      } else {
+        console.log(`   🔒 [DRY RUN] Would add overrides for ${compromisedFindings.length} packages`);
+      }
+    }
+
+    // Step 5: Update direct dependencies in package.json (optional)
+    for (const finding of compromisedFindings) {
+      const { package: packageName, safeVersion } = finding;
+      
+      // Update in dependencies if they exist
+      if (packageJson.dependencies && packageJson.dependencies[packageName]) {
+        if (!options.dryRun) {
+          packageJson.dependencies[packageName] = safeVersion;
+          packageJsonModified = true;
+        }
+        result.fixedPackages.push(`${packageName}@${safeVersion}`);
+        console.log(`   📦 ${options.dryRun ? '[DRY RUN] Would update' : 'Updated'} ${packageName}: ${finding.version} -> ${safeVersion}`);
+      }
+      
+      // Update in devDependencies if they exist
+      if (packageJson.devDependencies && packageJson.devDependencies[packageName]) {
+        if (!options.dryRun) {
+          packageJson.devDependencies[packageName] = safeVersion;
+          packageJsonModified = true;
+        }
+        if (!result.fixedPackages.includes(`${packageName}@${safeVersion}`)) {
+          result.fixedPackages.push(`${packageName}@${safeVersion}`);
+        }
+        console.log(`   📦 ${options.dryRun ? '[DRY RUN] Would update' : 'Updated'} ${packageName} (dev): ${finding.version} -> ${safeVersion}`);
+      }
+    }
+
+    // Step 6: Write updated package.json
+    if (packageJsonModified && !options.dryRun) {
+      await writeFile(packageJsonPath, JSON.stringify(packageJson, null, 2) + '\n', 'utf-8');
+      console.log(`   💾 Updated package.json with overrides`);
+    }
+
+    // Step 7: Remove lockfiles and node_modules AFTER adding overrides
+    if (!options.dryRun) {
+      await cleanProjectDependencies(projectPath, project.manager, options.skipNodeModules);
+    } else {
+      console.log(`   🗑️  [DRY RUN] Would remove lockfiles and node_modules`);
+    }
+
+    // Step 8: Install packages with clean slate
+    if (!options.dryRun) {
+      console.log(`   📥 Installing packages with clean slate...`);
+      await installPackages(projectPath, project.manager, options.force);
+      console.log(`   ✅ Package installation completed`);
+      
+      // Step 9: Run npm audit fix to resolve any remaining vulnerabilities
+      console.log(`   🔧 Running npm audit fix...`);
+      await runAuditFix(projectPath, project.manager);
+      console.log(`   ✅ Audit fix completed`);
+    } else {
+      console.log(`   📥 [DRY RUN] Would install packages`);
+      console.log(`   🔧 [DRY RUN] Would run npm audit fix`);
+    }
+
+    result.success = true;
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    result.errors.push(errorMsg);
+  }
+
+  return result;
+}
+
+/**
+ * Add package overrides/resolutions to force specific versions
+ */
+async function addPackageOverrides(
+  packageJson: any,
+  findings: Finding[],
+  packageManager: string
+): Promise<void> {
+  const overrides: { [key: string]: string } = {};
+  
+  for (const finding of findings) {
+    overrides[finding.package] = finding.safeVersion;
+  }
+
+  switch (packageManager) {
+    case 'npm':
+      // Use npm overrides (npm 8.3+)
+      if (!packageJson.overrides) {
+        packageJson.overrides = {};
+      }
+      Object.assign(packageJson.overrides, overrides);
+      break;
+      
+    case 'yarn':
+      // Use yarn resolutions
+      if (!packageJson.resolutions) {
+        packageJson.resolutions = {};
+      }
+      Object.assign(packageJson.resolutions, overrides);
+      break;
+      
+    case 'pnpm':
+      // Use pnpm overrides
+      if (!packageJson.pnpm) {
+        packageJson.pnpm = {};
+      }
+      if (!packageJson.pnpm.overrides) {
+        packageJson.pnpm.overrides = {};
+      }
+      Object.assign(packageJson.pnpm.overrides, overrides);
+      break;
+  }
+}
+
+/**
+ * Clean project dependencies - remove lockfiles and node_modules
+ */
+async function cleanProjectDependencies(
+  projectPath: string,
+  packageManager: string,
+  skipNodeModules: boolean
+): Promise<void> {
+  const nodeModulesPath = join(projectPath, 'node_modules');
+  
+  // Remove lockfiles based on package manager
+  const lockfiles = {
+    npm: 'package-lock.json',
+    yarn: 'yarn.lock', 
+    pnpm: 'pnpm-lock.yaml',
+  };
+  
+  const lockfilePath = join(projectPath, lockfiles[packageManager as keyof typeof lockfiles] || lockfiles.npm);
+  
+  try {
+    // Remove lockfile
+    if (existsSync(lockfilePath)) {
+      await rmdir(lockfilePath).catch(() => {
+        // Try unlinking if rmdir fails (for files)
+        return unlink(lockfilePath);
+      });
+      console.log(`   🗑️  Removed ${lockfiles[packageManager as keyof typeof lockfiles] || lockfiles.npm}`);
+    }
+    
+    // Remove additional pnpm lockfile variant
+    if (packageManager === 'pnpm') {
+      const altLockfile = join(projectPath, 'pnpm-lock.yml');
+      if (existsSync(altLockfile)) {
+        await unlink(altLockfile);
+        console.log(`   🗑️  Removed pnpm-lock.yml`);
+      }
+    }
+    
+    // Remove node_modules
+    if (!skipNodeModules && existsSync(nodeModulesPath)) {
+      console.log(`   🗑️  Removing node_modules...`);
+      await rmdir(nodeModulesPath, { recursive: true });
+      console.log(`   🗑️  Removed node_modules`);
+    }
+  } catch (error) {
+    console.warn(`   ⚠️  Warning: Could not clean some files: ${error}`);
+  }
+}
+
+/**
+ * Install packages using the appropriate package manager
+ */
+async function installPackages(
+  projectPath: string,
+  packageManager: string,
+  force: boolean
+): Promise<void> {
+  const commands: { [key: string]: string } = {
+    npm: force ? 'npm install --force' : 'npm install',
+    yarn: force ? 'yarn install --force' : 'yarn install',
+    pnpm: force ? 'pnpm install --force' : 'pnpm install',
+  };
+
+  const command = commands[packageManager] || commands.npm;
+  
+  try {
+    await execAsync(command, { 
+      cwd: projectPath,
+      timeout: 300000, // 5 minute timeout
+    });
+  } catch (error) {
+    const execError = error as any;
+    throw new Error(`Install failed: ${execError.message}`);
+  }
+}
+
+/**
+ * Run audit fix using the appropriate package manager
+ */
+async function runAuditFix(
+  projectPath: string,
+  packageManager: string
+): Promise<void> {
+  const commands: { [key: string]: string } = {
+    npm: 'npm audit fix --force',
+    yarn: 'yarn audit --fix',
+    pnpm: 'pnpm audit --fix',
+  };
+
+  const command = commands[packageManager] || commands.npm;
+  
+  try {
+    await execAsync(command, { 
+      cwd: projectPath,
+      timeout: 300000, // 5 minute timeout
+    });
+  } catch (error) {
+    // Audit fix can return non-zero exit codes even on success
+    // Log warning but don't fail the entire process
+    console.warn(`   ⚠️  Audit fix completed with warnings: ${error}`);
+  }
+}
+
+/**
+ * Create backup of package.json
+ */
+async function createBackup(packageJsonPath: string): Promise<string> {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const backupPath = `${packageJsonPath}.backup.${timestamp}`;
+  
+  const content = await readFile(packageJsonPath, 'utf-8');
+  await writeFile(backupPath, content, 'utf-8');
+  
+  return backupPath;
+}
+
+/**
+ * Restore from backup
+ */
+export async function restoreFromBackup(backupPath: string): Promise<void> {
+  if (!existsSync(backupPath)) {
+    throw new Error(`Backup file not found: ${backupPath}`);
+  }
+  
+  const originalPath = backupPath.replace(/\.backup\..+$/, '');
+  const content = await readFile(backupPath, 'utf-8');
+  await writeFile(originalPath, content, 'utf-8');
+  
+  console.log(`✅ Restored from backup: ${backupPath}`);
+}
+
+/**
+ * Print fix report summary
+ */
+export function printFixReport(report: FixReport): void {
+  console.log('\n' + '='.repeat(80));
+  console.log('🔧 AUTOMATIC FIX REPORT');
+  console.log('='.repeat(80));
+  
+  console.log(`📊 Summary:`);
+  console.log(`   Total projects: ${report.totalProjects}`);
+  console.log(`   Fixed projects: ${report.fixedProjects}`);
+  console.log(`   Failed projects: ${report.failedProjects}`);
+  console.log(`   Total packages fixed: ${report.summary.totalPackagesFixed}`);
+  
+  if (report.summary.errors.length > 0) {
+    console.log('\n❌ Global Errors:');
+    report.summary.errors.forEach(error => console.log(`   - ${error}`));
+  }
+  
+  console.log('\n📋 Project Details:');
+  for (const result of report.results) {
+    if (result.success) {
+      console.log(`✅ ${result.project}: Fixed ${result.fixedPackages.length} packages`);
+      if (result.fixedPackages.length > 0) {
+        result.fixedPackages.forEach(pkg => console.log(`     - ${pkg}`));
+      }
+      if (result.backupPath) {
+        console.log(`     📋 Backup: ${result.backupPath}`);
+      }
+    } else {
+      console.log(`❌ ${result.project}: Failed`);
+      result.errors.forEach(error => console.log(`     Error: ${error}`));
+    }
+  }
+  
+  if (report.fixedProjects > 0) {
+    console.log(`\n✅ Fix completed! ${report.fixedProjects} projects were successfully fixed.`);
+    console.log(`💡 Recommendation: Run 'guard-deps scan' again to verify all issues are resolved.`);
+  } else {
+    console.log(`\n⚠️  No projects were fixed. Check the errors above for details.`);
+  }
+}
