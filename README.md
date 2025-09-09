@@ -85,20 +85,6 @@ guard-deps fix
 PROJECTS_ROOT=/Users/yourname/Projects guard-deps scan
 ```
 
-## 📋 Configuration
-
-Guard-Deps works with sensible defaults and no configuration required. You can optionally configure via environment variables:
-
-```bash
-# Root directory to scan for Node.js projects
-PROJECTS_ROOT=/path/to/your/projects
-
-# Comma-separated directories to ignore during scanning  
-IGNORE_DIRS=node_modules,dist,build,.git,.next,coverage
-
-# Advisory source - local file or remote URL
-ADVISORY_SOURCE=file:./malicious-packages.txt
-```
 
 ## 🎯 Commands
 
@@ -196,90 +182,6 @@ guard-deps scan --help                      # Scan command help
 guard-deps fix --help                       # Fix command help
 ```
 
-## 🔒 Security Model
-
-Guard-Deps uses a **malware detection** approach:
-
-- **`@malicious-packages.txt`** contains known malware versions for packages
-- **When malware version detected**: Try to **upgrade** to newer safe version first
-- **If no upgrade available**: **Downgrade** to calculated safe version (y.z.[x-1])
-- **Smart strategy**: Keeps packages modern when possible, only downgrades when necessary
-
-### Example Advisory Format
-
-```text
-# Malware Package Detection  
-# Format: {package name} > {malware version} > {safe version}
-# If malware version detected, use the specified safe version for upgrade/downgrade
-
-chalk > 5.6.1 > 5.6.2
-ansi-styles > 6.2.2 > 6.2.3
-color-convert > 3.1.1 > 3.1.0
-is-core-module > 2.16.1 > 2.16.0
-```
-
-### Risk Levels
-
-- 🚨 **COMPROMISED**: Malware version detected - will try upgrade first, then downgrade
-- ⚠️ **AT_RISK**: Version range could resolve to malware version
-- 📅 **OUTDATED**: Legacy classification (not used in current model)  
-- ✅ **OK**: Version is safe (not a known malware version)
-
-## 📊 Output Examples
-
-### Console Table Output
-```
-================================================================================
-GUARD-DEPS SECURITY SCAN REPORT
-================================================================================
-
-┌─────────────────────┬─────────────┬─────────────────┬─────────────┬──────────────┐
-│ Project             │ Status      │ Package         │ Current     │ Target       │
-├─────────────────────┼─────────────┼─────────────────┼─────────────┼──────────────┤
-│ my-app              │ COMPROMISED │ picocolors      │ 1.1.1       │ 1.2.0↑       │
-└─────────────────────┴─────────────┴─────────────────┴─────────────┴──────────────┘
-
-SUMMARY:
-┌──────────────┬───────┬────────────┐
-│ Status       │ Count │ Percentage │
-├──────────────┼───────┼────────────┤
-│ Compromised  │ 1     │ 100%       │
-└──────────────┴───────┴────────────┘
-```
-
-### JSON Report
-```json
-{
-  "scannedAt": "2025-09-09T10:10:05.847Z",
-  "root": "/path/to/projects",
-  "projects": [
-    {
-      "path": "my-app",
-      "manager": "npm",
-      "status": "compromised",
-      "findings": [
-        {
-          "package": "picocolors",
-          "version": "1.1.1",
-          "safeVersion": "1.1.0",
-          "riskLevel": "compromised",
-          "fix": [
-            "npm install picocolors@1.2.0",
-            "Upgrade to 1.2.0 (latest safe version)"
-          ]
-        }
-      ]
-    }
-  ],
-  "summary": {
-    "projects": 1,
-    "compromised": 1,
-    "at_risk": 0,
-    "outdated": 0,
-    "ok": 0
-  }
-}
-```
 
 ## 🔧 Package Manager Support
 
@@ -360,12 +262,6 @@ src/
 └── cli.ts           # Command-line interface
 ```
 
-## 🔒 Security & Performance
-
-- **Safe**: Only reads files during scanning; writes only during explicit fix operations
-- **Fast**: Parallel directory traversal and lockfile parsing
-- **Scalable**: Handles 1000+ projects within ~60 seconds
-- **Defensive**: Comprehensive error handling and input validation
 
 ## 🛠️ Development
 
@@ -398,12 +294,6 @@ npm test          # Run tests (when available)
 - ✅ **Global command updates automatically** when you rebuild
 - ✅ **Clean up** with `npm unlink` when done
 
-## 📈 Roadmap
-
-- **v0.1**: ✅ MVP (scan + advisory check + JSON/table outputs + fix command)
-- **v0.2**: Markdown reporting, enhanced fix suggestions
-- **v0.3**: Remote advisory sync (Socket.dev, Aikido integration)  
-- **v1.0**: CI/CD examples, Git hooks, SBOM export
 
 ## 🤝 Contributing
 
@@ -414,71 +304,11 @@ npm test          # Run tests (when available)
 5. Build the project: `npm run build`
 6. Submit a pull request
 
-## 🎯 Real-World Usage Examples
 
-### Enterprise Security Audit
-```bash
-# Scan all company projects and generate comprehensive reports
-guard-deps scan --cwd /company/repos --out audit-2024.json --md audit-report.md --fail-on at_risk
-
-# Preview fixes across all projects
-guard-deps fix --dry-run --cwd /company/repos
-
-# Apply fixes with careful verification
-guard-deps fix --cwd /company/repos --no-skip-node-modules
-```
-
-### CI/CD Integration
-```bash
-# Add to your CI pipeline
-guard-deps scan --strict --fail-on compromised --format json > security-scan.json
-
-# Exit codes: 0=safe, 10=compromised found, 2=config error
-echo $? # Check exit status
-```
-
-### Developer Daily Workflow  
-```bash
-# Quick daily security check
-guard-deps scan --cwd .
-
-# Safe preview and fix for current project
-guard-deps fix --dry-run --cwd .
-guard-deps fix --cwd . --backup  # Creates backup before changes
-```
-
-### Automated Security Monitoring
-```bash
-# Weekly scheduled scan with email reports
-guard-deps scan --cwd ~/AllProjects --md weekly-security.md
-# (integrate with cron and email the markdown report)
-
-# Emergency response - fix critical issues immediately
-guard-deps fix --dry-run  # Review first
-guard-deps fix           # Apply fixes
-```
-
-## 🚀 Installation & Global Usage
-
-After global installation, guard-deps automatically:
-- ✅ **Loads built-in security advisories** (no config files needed)
-- ✅ **Scans transitive dependencies** in node_modules
-- ✅ **Consolidates fixes** to root package.json files
-- ✅ **Works from any directory** on your system
-
-```bash
-# One-time global installation
-npm install -g guard-deps
-
-# Now works everywhere!
-cd ~/Documents/my-app && guard-deps scan
-cd ~/Desktop/client-project && guard-deps fix --dry-run
-cd /company/backend && guard-deps scan --out security.json
-```
 
 ## 📄 License
 
-MIT License - see LICENSE file for details.
+MIT License - see [LICENSE](LICENSE) file for details.
 
 ---
 
