@@ -22,7 +22,13 @@ export class PackageJsonParser implements LockfileParser {
 
   async parse(packageJsonPath: string): Promise<ParsedLockfile> {
     const content = await readFile(packageJsonPath, 'utf-8');
-    const packageData: PackageJsonData = JSON.parse(content);
+    let packageData: PackageJsonData;
+    
+    try {
+      packageData = JSON.parse(content);
+    } catch (error) {
+      throw new Error(`Invalid JSON in ${packageJsonPath}: ${error instanceof Error ? error.message : 'Parse error'}`);
+    }
 
     // Default to npm manager when parsing package.json
     const manager: PackageManager = { name: 'npm', lockfile: 'package-lock.json' };
@@ -58,7 +64,13 @@ export class PackageJsonParser implements LockfileParser {
    */
   async parseProductionDependencies(packageJsonPath: string): Promise<DependencyInfo[]> {
     const content = await readFile(packageJsonPath, 'utf-8');
-    const packageData: PackageJsonData = JSON.parse(content);
+    let packageData: PackageJsonData;
+    
+    try {
+      packageData = JSON.parse(content);
+    } catch (error) {
+      throw new Error(`Invalid JSON in ${packageJsonPath}: ${error instanceof Error ? error.message : 'Parse error'}`);
+    }
 
     const dependencies: DependencyInfo[] = [];
     const deps = packageData.dependencies || {};
@@ -78,7 +90,13 @@ export class PackageJsonParser implements LockfileParser {
    */
   async parseDevDependencies(packageJsonPath: string): Promise<DependencyInfo[]> {
     const content = await readFile(packageJsonPath, 'utf-8');
-    const packageData: PackageJsonData = JSON.parse(content);
+    let packageData: PackageJsonData;
+    
+    try {
+      packageData = JSON.parse(content);
+    } catch (error) {
+      throw new Error(`Invalid JSON in ${packageJsonPath}: ${error instanceof Error ? error.message : 'Parse error'}`);
+    }
 
     const dependencies: DependencyInfo[] = [];
     const devDeps = packageData.devDependencies || {};
@@ -102,7 +120,13 @@ export class PackageJsonParser implements LockfileParser {
     hasLockfile: boolean;
   }> {
     const content = await readFile(packageJsonPath, 'utf-8');
-    const packageData: PackageJsonData = JSON.parse(content);
+    let packageData: PackageJsonData;
+    
+    try {
+      packageData = JSON.parse(content);
+    } catch (error) {
+      throw new Error(`Invalid JSON in ${packageJsonPath}: ${error instanceof Error ? error.message : 'Parse error'}`);
+    }
 
     return {
       name: packageData.name || 'unknown',
