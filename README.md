@@ -18,6 +18,7 @@ Following the recent NPM supply-chain attacks that compromised popular packages 
 
 ### Installation
 
+#### Option 1: Global Installation (Recommended)
 ```bash
 # Clone and build
 git clone <repository-url>
@@ -25,24 +26,44 @@ cd guard-deps
 npm install
 npm run build
 
-# Or install globally
+# Install globally for system-wide access
 npm install -g .
+
+# Now use anywhere!
+guard-deps scan
+guard-deps fix --dry-run
+```
+
+#### Option 2: Development/Local Usage
+```bash
+# Clone and build
+git clone <repository-url>
+cd guard-deps
+npm install
+npm run build
+
+# Use with node directly
+node dist/cli.js scan
+node dist/cli.js fix --dry-run
 ```
 
 ### Basic Usage
 
 ```bash
-# Scan all projects from PROJECTS_ROOT
-node dist/cli.js scan
+# After global installation, use these commands anywhere:
 
-# Scan single project
-node dist/cli.js scan --cwd ./my-project
+# Scan all projects in current directory
+guard-deps scan
 
-# Automatically fix compromised packages
-node dist/cli.js fix --cwd ./my-project
+# Scan specific directory
+guard-deps scan --cwd ./my-project
 
-# Preview fixes without applying them
-node dist/cli.js fix --dry-run --cwd ./my-project
+# Automatically fix compromised packages (preview first!)
+guard-deps fix --dry-run
+guard-deps fix
+
+# Scan all projects under a root directory
+PROJECTS_ROOT=/Users/yourname/Projects guard-deps scan
 ```
 
 ## 📋 Configuration
@@ -67,42 +88,64 @@ ADVISORY_SOURCE=file:./malicious-packages.txt
 Scan for compromised NPM dependencies:
 
 ```bash
-# Basic scan
-node dist/cli.js scan
+# Basic scan (scans current directory)
+guard-deps scan
 
 # Scan specific directory
-node dist/cli.js scan --cwd ./project
+guard-deps scan --cwd ./my-project
+
+# Scan all projects under a root directory
+guard-deps scan --cwd /Users/yourname/Projects
 
 # Output formats
-node dist/cli.js scan --out report.json          # JSON report
-node dist/cli.js scan --md report.md             # Markdown report
-node dist/cli.js scan --format json              # JSON to console
-node dist/cli.js scan --format table             # Table to console (default)
+guard-deps scan --out report.json          # Save JSON report
+guard-deps scan --md report.md             # Save Markdown report
+guard-deps scan --format json              # Output JSON to console
+guard-deps scan --format table             # Table to console (default)
+guard-deps scan --format md                # Markdown to console
 
-# Risk levels
-node dist/cli.js scan --strict                   # Only confirmed compromised
-node dist/cli.js scan --fail-on compromised      # Fail on compromised (default)
-node dist/cli.js scan --fail-on at_risk          # Fail on at-risk packages
-node dist/cli.js scan --fail-on outdated         # Fail on outdated packages
+# Risk level configuration
+guard-deps scan --strict                   # Only confirmed compromised packages
+guard-deps scan --fail-on compromised      # Exit code 10 on compromised (default)
+guard-deps scan --fail-on at_risk          # Exit code 11 on at-risk packages  
+guard-deps scan --fail-on outdated         # Exit code 11 on outdated packages
+
+# Combined example
+guard-deps scan --cwd ~/Projects --out security-report.json --md security-report.md --fail-on at_risk
 ```
 
 ### `fix` - Automatic Remediation 🆕
 
-Automatically fix compromised packages:
+Automatically fix compromised packages by updating root package.json files:
 
 ```bash
-# Basic fix
-node dist/cli.js fix --cwd ./project
+# Always preview first! (RECOMMENDED)
+guard-deps fix --dry-run
 
-# Preview changes without applying
-node dist/cli.js fix --dry-run --cwd ./project
+# Basic fix (current directory)
+guard-deps fix
+
+# Fix specific project
+guard-deps fix --cwd ./my-project
 
 # Fix options
-node dist/cli.js fix --no-force                  # Disable force overrides
-node dist/cli.js fix --skip-node-modules         # Keep node_modules
-node dist/cli.js fix --no-backup                 # Skip backup creation
-node dist/cli.js fix --no-rescan                 # Skip post-fix verification
+guard-deps fix --dry-run                    # Preview without applying changes
+guard-deps fix --no-force                  # Disable force npm install & overrides
+guard-deps fix --skip-node-modules         # Don't remove node_modules (faster)
+guard-deps fix --no-backup                 # Skip package.json backup creation
+guard-deps fix --no-rescan                 # Skip automatic verification scan
+
+# Combined example
+guard-deps fix --cwd ~/Projects/my-app --dry-run --no-backup
 ```
+
+**Fix Process:**
+1. 🔍 Scans for compromised packages (including in node_modules)
+2. 🔒 Adds overrides to root package.json (forces safe versions)
+3. 🗑️ Removes package-lock.json and node_modules
+4. 📥 Runs npm install (installs with overrides)
+5. 🔧 Runs npm audit fix (resolves remaining vulnerabilities)
+6. 🔍 Re-scans to verify fixes worked
 
 The fix command:
 1. 🗑️ **Removes `node_modules`** (unless `--skip-node-modules`)
@@ -115,20 +158,20 @@ The fix command:
 ### Other Commands
 
 ```bash
-# List discovered projects
-node dist/cli.js list
-node dist/cli.js list --cwd /specific/path
+# List discovered projects (without scanning)
+guard-deps list                             # List projects in current directory
+guard-deps list --cwd /Users/yourname/Projects
 
-# Show configuration
-node dist/cli.js info
+# Show current configuration
+guard-deps info
 
-# Show version
-node dist/cli.js version
+# Show version information  
+guard-deps version
 
-# Help
-node dist/cli.js --help
-node dist/cli.js scan --help
-node dist/cli.js fix --help
+# Get help
+guard-deps --help                           # General help
+guard-deps scan --help                      # Scan command help
+guard-deps fix --help                       # Fix command help
 ```
 
 ## 🔒 Security Model
@@ -235,28 +278,44 @@ SUMMARY:
 
 ## 🔄 Typical Workflow
 
-### 1. Initial Scan
+### 1. Install Globally
 ```bash
-# Discover security issues
-node dist/cli.js scan --out initial-scan.json
+# One-time setup
+git clone <repository-url>
+cd guard-deps
+npm install && npm run build && npm install -g .
 ```
 
-### 2. Preview Fix
+### 2. Initial Scan
 ```bash
-# See what would be fixed
-node dist/cli.js fix --dry-run
+# Discover security issues across all your projects
+cd ~/Projects
+guard-deps scan --out security-report.json --md security-report.md
 ```
 
-### 3. Apply Fix
+### 3. Preview Fixes
 ```bash
-# Automatically fix issues
-node dist/cli.js fix
+# See what would be fixed (ALWAYS do this first!)
+guard-deps fix --dry-run
 ```
 
-### 4. Verify
+### 4. Apply Fixes
+```bash
+# Automatically fix compromised packages
+guard-deps fix
+```
+
+### 5. Verify Results
 ```bash
 # Confirm all issues resolved
-node dist/cli.js scan
+guard-deps scan
+```
+
+### 6. Individual Project Fixes
+```bash
+# Fix specific projects one by one if needed
+guard-deps fix --cwd ./my-critical-app --dry-run
+guard-deps fix --cwd ./my-critical-app
 ```
 
 ## 🏗️ Architecture
@@ -296,6 +355,68 @@ src/
 4. Ensure all tests pass: `npm test`
 5. Build the project: `npm run build`
 6. Submit a pull request
+
+## 🎯 Real-World Usage Examples
+
+### Enterprise Security Audit
+```bash
+# Scan all company projects and generate comprehensive reports
+guard-deps scan --cwd /company/repos --out audit-2024.json --md audit-report.md --fail-on at_risk
+
+# Preview fixes across all projects
+guard-deps fix --dry-run --cwd /company/repos
+
+# Apply fixes with careful verification
+guard-deps fix --cwd /company/repos --no-skip-node-modules
+```
+
+### CI/CD Integration
+```bash
+# Add to your CI pipeline
+guard-deps scan --strict --fail-on compromised --format json > security-scan.json
+
+# Exit codes: 0=safe, 10=compromised found, 2=config error
+echo $? # Check exit status
+```
+
+### Developer Daily Workflow  
+```bash
+# Quick daily security check
+guard-deps scan --cwd .
+
+# Safe preview and fix for current project
+guard-deps fix --dry-run --cwd .
+guard-deps fix --cwd . --backup  # Creates backup before changes
+```
+
+### Automated Security Monitoring
+```bash
+# Weekly scheduled scan with email reports
+guard-deps scan --cwd ~/AllProjects --md weekly-security.md
+# (integrate with cron and email the markdown report)
+
+# Emergency response - fix critical issues immediately
+guard-deps fix --dry-run  # Review first
+guard-deps fix           # Apply fixes
+```
+
+## 🚀 Installation & Global Usage
+
+After global installation, guard-deps automatically:
+- ✅ **Loads built-in security advisories** (no config files needed)
+- ✅ **Scans transitive dependencies** in node_modules
+- ✅ **Consolidates fixes** to root package.json files
+- ✅ **Works from any directory** on your system
+
+```bash
+# One-time global installation
+npm install -g guard-deps
+
+# Now works everywhere!
+cd ~/Documents/my-app && guard-deps scan
+cd ~/Desktop/client-project && guard-deps fix --dry-run
+cd /company/backend && guard-deps scan --out security.json
+```
 
 ## 📄 License
 
