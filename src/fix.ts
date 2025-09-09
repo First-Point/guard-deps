@@ -239,7 +239,7 @@ async function fixProject(
       
       // Use pre-calculated target version
       const targetVersion = targetVersions.get(packageName) || safeVersion;
-      const strategy = targetVersion === safeVersion ? 'downgrade' : 'upgrade';
+      const strategy = semver.gt(targetVersion, finding.version) ? 'upgrade' : 'downgrade';
       
       // Update in dependencies if they exist
       if (packageJson.dependencies && packageJson.dependencies[packageName]) {
@@ -653,7 +653,7 @@ export async function restoreFromBackup(backupPath: string): Promise<void> {
 }
 
 /**
- * Determine the best fix version: try upgrade first, then fallback to safe version
+ * Determine the best fix version: use provided safe version directly
  */
 async function determineBestFixVersion(
   packageName: string,
@@ -661,32 +661,9 @@ async function determineBestFixVersion(
   safeVersion: string,
   projectPath: string
 ): Promise<string> {
-  try {
-    // Try to get latest version information from npm
-    const { stdout } = await execAsync(`npm view ${packageName} version`, {
-      cwd: projectPath,
-      timeout: 30000, // 30 second timeout
-    });
-    
-    const latestVersion = stdout.trim();
-    
-    // Check if we can upgrade to a newer safe version
-    if (semver.gt(latestVersion, currentVersion) && semver.gt(latestVersion, safeVersion)) {
-      console.log(`   💡 Found newer version ${latestVersion} for ${packageName}, attempting upgrade`);
-      return latestVersion;
-    } else if (semver.gt(latestVersion, safeVersion)) {
-      console.log(`   💡 Found intermediate version ${latestVersion} for ${packageName}, using it`);
-      return latestVersion;
-    }
-    
-    // Fallback to safe version (downgrade)
-    return safeVersion;
-    
-  } catch (error) {
-    // If npm view fails, fallback to safe version
-    console.log(`   ⚠️  Could not check latest version for ${packageName}, using safe version`);
-    return safeVersion;
-  }
+  // Use the explicitly provided safe version from advisory
+  console.log(`   🎯 Using specified safe version ${safeVersion} for ${packageName}`);
+  return safeVersion;
 }
 
 /**

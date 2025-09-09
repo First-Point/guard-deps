@@ -128,7 +128,24 @@ function parseTextAdvisories(content: string): AdvisoryDatabase {
       continue;
     }
     
-    // Parse format: "package > malware_version"
+    // Parse new format: "package > malware_version > safe_version"
+    const tripleMatch = trimmed.match(/^(.+?)\s+>\s+(.+?)\s+>\s+(.+?)$/);
+    if (tripleMatch) {
+      const [, packageName, malwareVersion, safeVersion] = tripleMatch;
+      const cleanPackageName = packageName.trim();
+      const cleanMalwareVersion = malwareVersion.trim();
+      const cleanSafeVersion = safeVersion.trim();
+      
+      advisories[cleanPackageName] = {
+        package: cleanPackageName,
+        badVersions: [`=${cleanMalwareVersion}`], // Only the specific malware version is bad
+        safeVersion: cleanSafeVersion, // Use provided safe version
+        malwareVersion: cleanMalwareVersion, // Store the specific malware version
+      };
+      continue;
+    }
+
+    // Parse old format: "package > malware_version" (fallback to calculated safe version)
     const greaterThanMatch = trimmed.match(/^(.+?)\s+>\s+(.+?)$/);
     if (greaterThanMatch) {
       const [, packageName, malwareVersion] = greaterThanMatch;
@@ -254,28 +271,28 @@ export function mergeAdvisories(...databases: AdvisoryDatabase[]): AdvisoryDatab
 function getBuiltInAdvisories(): AdvisoryDatabase {
   // Parse the built-in advisory data (same as malicious-packages.txt)
   const builtInData = `# Malware Package Detection
-# Format: {package name} > {malware version}
-# If malware version detected, try upgrade first, then downgrade to safe version (y.z.[x-1])
+# Format: {package name} > {malware version} > {safe version}
+# If malware version detected, use the specified safe version for upgrade/downgrade
 
 # Color and styling packages (known compromised)
-ansi-regex > 6.2.1
-ansi-styles > 6.2.2
-backslash > 0.2.1
-chalk > 5.6.1
-chalk-template > 1.1.1
-color > 5.0.1
-color-convert > 3.1.1
-color-name > 2.0.1
-color-string > 2.1.1
-error-ex > 1.3.3
-has-ansi > 6.0.1
-is-arrayish > 0.3.3
-simple-swizzle > 0.2.3
-slice-ansi > 7.1.1
-strip-ansi > 7.1.1
-supports-color > 10.2.1
-supports-hyperlinks > 4.1.1
-wrap-ansi > 9.0.1`;
+ansi-regex > 6.2.1 > 6.2.2
+ansi-styles > 6.2.2 > 6.2.3
+backslash > 0.2.1 > 0.2.0
+chalk > 5.6.1 > 5.6.2
+chalk-template > 1.1.1 > 1.1.2
+color > 5.0.1 > 5.0.0
+color-convert > 3.1.1 > 3.1.0
+color-name > 2.0.1 > 2.0.0
+color-string > 2.1.1 > 2.1.0
+error-ex > 1.3.3 > 1.3.2
+has-ansi > 6.0.1 > 6.0.2
+is-arrayish > 0.3.3 > 0.3.2
+simple-swizzle > 0.2.3 > 0.2.2
+slice-ansi > 7.1.1 > 7.1.2
+strip-ansi > 7.1.1 > 7.1.2
+supports-color > 10.2.1 > 10.2.2
+supports-hyperlinks > 4.1.1 > 4.1.2
+wrap-ansi > 9.0.1 > 9.0.2`;
 
   return parseTextAdvisories(builtInData);
 }
