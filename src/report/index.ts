@@ -87,6 +87,26 @@ export function printSummary(report: ScanReport): void {
 }
 
 /**
+ * Print fix command suggestions when issues are found
+ */
+export function printFixSuggestion(config: Config): void {
+  const currentDir = config.cwd || process.cwd();
+  const isSpecificDir = config.cwd && config.cwd !== process.cwd();
+  
+  console.log('\n💡 Suggested next steps:');
+  
+  if (isSpecificDir) {
+    console.log(`   guard-deps fix --dry-run --cwd ${config.cwd}    # Preview fixes (recommended first step)`);
+    console.log(`   guard-deps fix --cwd ${config.cwd}              # Apply fixes automatically`);
+  } else {
+    console.log('   guard-deps fix --dry-run    # Preview fixes (recommended first step)');
+    console.log('   guard-deps fix              # Apply fixes automatically');
+  }
+  
+  console.log('\n   💡 Always run with --dry-run first to preview changes!');
+}
+
+/**
  * Get risk level color for terminal output
  */
 export function getRiskColor(riskLevel: RiskLevel): string {

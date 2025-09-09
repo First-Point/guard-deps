@@ -9,7 +9,7 @@ import { loadConfig, validateConfig, getOutputPath } from './env';
 import { discoverProjects } from './discover';
 import { loadAdvisories } from './advisory';
 import { analyzeProjects } from './analyze';
-import { generateReports, determineExitCode, printSummary } from './report';
+import { generateReports, determineExitCode, printSummary, printFixSuggestion } from './report';
 import { fixCompromisedPackages, printFixReport, FixOptions } from './fix';
 import { CliOptions, ProjectInfo } from './types';
 import { exec } from 'child_process';
@@ -186,6 +186,9 @@ async function runScan(options: CliOptions): Promise<void> {
   if (exitCode > 0) {
     const level = config.failOn;
     console.log(`\n💥 Exiting with code ${exitCode} due to ${level} issues found`);
+    
+    // Suggest fix command when issues are found
+    printFixSuggestion(config);
   }
   
   process.exit(exitCode);
