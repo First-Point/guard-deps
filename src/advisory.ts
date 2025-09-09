@@ -224,8 +224,9 @@ chalk > 5.3.0
 strip-ansi > 7.1.0
 color-convert > 2.0.1
 color-name > 1.1.4
-picocolors > 1.0.0
-colors > 1.4.0`;
+is-core-module > 2.13.1
+error-ex > 1.3.2
+has-ansi > 5.0.1`;
 
   return parseTextAdvisories(builtInData);
 }
