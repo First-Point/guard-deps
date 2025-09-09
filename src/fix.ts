@@ -332,7 +332,6 @@ async function addPackageOverrides(
   packageManager: string
 ): Promise<void> {
   const overrides: { [key: string]: string } = {};
-  const nestedOverrides: { [key: string]: string } = {};
   
   for (const finding of findings) {
     const packageName = finding.package;
@@ -340,10 +339,6 @@ async function addPackageOverrides(
     
     // Direct override
     overrides[packageName] = safeVersion;
-    
-    // Nested override patterns to force resolution at all levels
-    nestedOverrides[`*/${packageName}`] = safeVersion;
-    nestedOverrides[`**/${packageName}`] = safeVersion;
   }
 
   switch (packageManager) {
@@ -354,8 +349,6 @@ async function addPackageOverrides(
       }
       // Add direct overrides
       Object.assign(packageJson.overrides, overrides);
-      // Add nested overrides for deep dependency trees
-      Object.assign(packageJson.overrides, nestedOverrides);
       break;
       
     case 'yarn':
@@ -364,7 +357,6 @@ async function addPackageOverrides(
         packageJson.resolutions = {};
       }
       Object.assign(packageJson.resolutions, overrides);
-      Object.assign(packageJson.resolutions, nestedOverrides);
       break;
       
     case 'pnpm':
@@ -376,7 +368,6 @@ async function addPackageOverrides(
         packageJson.pnpm.overrides = {};
       }
       Object.assign(packageJson.pnpm.overrides, overrides);
-      Object.assign(packageJson.pnpm.overrides, nestedOverrides);
       break;
   }
 }
@@ -391,7 +382,6 @@ async function addPackageOverridesWithVersions(
   packageManager: string
 ): Promise<void> {
   const overrides: { [key: string]: string } = {};
-  const nestedOverrides: { [key: string]: string } = {};
   
   for (const finding of findings) {
     const packageName = finding.package;
@@ -399,10 +389,6 @@ async function addPackageOverridesWithVersions(
     
     // Direct override
     overrides[packageName] = targetVersion;
-    
-    // Nested override patterns to force resolution at all levels
-    nestedOverrides[`*/${packageName}`] = targetVersion;
-    nestedOverrides[`**/${packageName}`] = targetVersion;
   }
 
   switch (packageManager) {
@@ -413,8 +399,6 @@ async function addPackageOverridesWithVersions(
       }
       // Add direct overrides
       Object.assign(packageJson.overrides, overrides);
-      // Add nested overrides for deep dependency trees
-      Object.assign(packageJson.overrides, nestedOverrides);
       break;
       
     case 'yarn':
@@ -423,7 +407,6 @@ async function addPackageOverridesWithVersions(
         packageJson.resolutions = {};
       }
       Object.assign(packageJson.resolutions, overrides);
-      Object.assign(packageJson.resolutions, nestedOverrides);
       break;
       
     case 'pnpm':
@@ -435,7 +418,6 @@ async function addPackageOverridesWithVersions(
         packageJson.pnpm.overrides = {};
       }
       Object.assign(packageJson.pnpm.overrides, overrides);
-      Object.assign(packageJson.pnpm.overrides, nestedOverrides);
       break;
   }
 }
