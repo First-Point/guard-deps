@@ -18,7 +18,7 @@ Following recent NPM supply-chain attacks that compromised popular packages like
 
 ### Global Installation (Recommended for Production)
 ```bash
-git clone <repository-url>
+git clone https://github.com/First-Point/guard-deps.git
 cd guard-deps
 npm install
 npm run build
@@ -27,7 +27,7 @@ npm install -g .
 
 ### Development Link (Best for Contributors)
 ```bash
-git clone <repository-url>
+git clone https://github.com/First-Point/guard-deps.git
 cd guard-deps
 npm install
 npm run build
@@ -39,7 +39,7 @@ npm run build  # Global command uses latest code automatically
 
 ### Local Usage (No Global Install)
 ```bash
-git clone <repository-url>
+git clone https://github.com/First-Point/guard-deps.git
 cd guard-deps
 npm install
 npm run build
@@ -131,12 +131,12 @@ guard-deps --help                           # Get help for any command
 ### 1. Install Globally
 ```bash
 # Clone and install globally
-git clone <repository-url>
+git clone https://github.com/First-Point/guard-deps.git
 cd guard-deps
 npm install && npm run build && npm install -g .
 
 # OR for development (recommended for contributors)
-git clone <repository-url>
+git clone https://github.com/First-Point/guard-deps.git
 cd guard-deps
 npm install && npm run build && npm link
 ```
@@ -173,7 +173,7 @@ src/
 
 ```bash
 # Setup
-git clone <repository-url>
+git clone https://github.com/First-Point/guard-deps.git
 cd guard-deps
 npm install
 
